@@ -29,7 +29,7 @@ def single_qubit_hamiltonian_3level(t, d_t, delta, alpha, omega_d):
     n_op = b_dag @ b
 
     # Drift Hamiltonian: δn + (α/2) n(n-1)
-    H_sys = delta * n_op + (alpha / 2.0) * n_op @ (n_op - np.eye(3))
+    H_sys = delta * n_op + (alpha / 2.0) * (b_dag @ b_dag @ b @ b)
 
     # Drive Hamiltonian
     H_ctrl = (omega_d / 2.0) * (d_t * b_dag + np.conj(d_t) * b)
@@ -80,14 +80,14 @@ def unitary_evolution_3level(H_func, times, psi0,
 # -----------------------------
 # PARAMETERS AND INITIAL STATE
 # -----------------------------
-t_total = 15
+t_total = 10
 n_steps = 1000
 times = np.linspace(0, t_total, n_steps)
 delta = 0.0
-alpha = -0.3
+alpha = 0.0  #-0.3
 omega_d = 1.0
 shape = "gaussian"
-width = 1.0
+width = 1
 center = 3 * width
 I = 1.0
 Q = 0
@@ -98,7 +98,8 @@ target = np.array([[0], [1], [0]], dtype=complex)  # Target: |0> -> |1>
 # -----------------------------
 # UPDATED FIDELITY FUNCTION (Eq.2)
 # -----------------------------
-def gate_fidelity(center, width, times):
+def gate_fidelity(width, times):
+    center = 3 * width  # FIXED center
     psi0 = np.array([[1], [0], [0]], dtype=complex)
     psi1 = np.array([[0], [1], [0]], dtype=complex)
 
@@ -119,15 +120,17 @@ def gate_fidelity(center, width, times):
 # OBJECTIVE FUNCTION WITH PENALTY
 # -----------------------------
 def objective2(params):
-    center, width = params
-    F_avg = gate_fidelity(center, width, times)
+    width = params
+    center = 3 * width  # FIXED center
+    F_avg = gate_fidelity(width, times)
     fidelity_loss = -F_avg
 
     I_t0, _ = normalized_drive_pulse(times[0], shape, center, width, I, Q)
     start_penalty = abs(I_t0)**2
     lambda_penalty = 5.0
 
-    return fidelity_loss + lambda_penalty * start_penalty
+    return fidelity_loss
+    #return fidelity_loss + lambda_penalty * start_penalty
 
 # -----------------------------
 # EARLY STOPPING CALLBACK
@@ -137,8 +140,8 @@ iter_count = [0]
 
 def stop_if_high_enough(current_guess):
     iter_count[0] += 1
-    center, width = current_guess
-    fid = gate_fidelity(center, width, times)
+    width = current_guess
+    fid = gate_fidelity(width, times)
     best_fid[0] = fid
     print(f"\n[Iteration {iter_count[0]}] Fidelity: {fid:.7f}")
     if fid >= 0.999995:
@@ -147,36 +150,91 @@ def stop_if_high_enough(current_guess):
 # -----------------------------
 # OPTIMIZATION CALL
 # -----------------------------
-initial_guess = [center, width]
-bounds = [(0.0, t_total), (0.1, t_total / 2)]
-try:
-    result = minimize(objective2, initial_guess, method='Nelder-Mead',
-                      bounds=bounds, callback=stop_if_high_enough,
-                      options={'maxiter': 200})
-except StopIteration:
-    print("Early stopping: fidelity threshold reached.")
-
-opt_center, opt_width = result.x
-print("------------")
-print(f"Optimal center: {opt_center:.5f}")
-print(f"Optimal width:  {opt_width:.5f}")
-print(f"Max fidelity:   {best_fid[0]:.10f}")
-
-# -----------------------------
-# FINAL SIMULATION AND PLOTS
-# -----------------------------
-psi_t = unitary_evolution_3level(H_func_3level, times, psi0,
-                                 delta, alpha, omega_d, shape, opt_center, opt_width, I, Q)
-
-populations = np.abs(psi_t)**2
-plt.figure(figsize=(8, 4))
-plt.plot(times, populations[:, 0], label="|0⟩")
-plt.plot(times, populations[:, 1], label="|1⟩")
-plt.plot(times, populations[:, 2], label="|2⟩ (leakage)", linestyle='--')
-plt.xlabel("Time")
-plt.ylabel("Population")
-plt.title("3-Level Qubit Evolution under Optimized Gaussian Pulse")
-plt.legend()
-plt.grid(True)
-plt.tight_layout()
-plt.show()
+optim = "Y"
+initial_guess = width
+bounds = [(0.1, t_total / 2)]
+if optim == "Y":
+    print("Optimisation ON")
+    try:
+        result = minimize(objective2, initial_guess, method='Nelder-Mead',
+                          bounds=bounds, callback=stop_if_high_enough,
+                          options={'maxiter': 200})
+    except StopIteration:
+        print("Early stopping: fidelity threshold reached.")
+    
+    # Extract best parameters
+    opt_width = result.x
+    opt_center = 3 * opt_width
+    max_fidelity = best_fid[0]
+    print("------------")
+    print(f"Optimal center:    {opt_center.item():.5f}")
+    print(f"Optimal width:     {opt_width.item():.5f}")
+    print(f"Maximum fidelity:  {max_fidelity:.10f}")
+    
+    # -----------------------------
+    # FINAL SIMULATION AND PLOTS
+    # -----------------------------
+    psi_t = unitary_evolution_3level(H_func_3level, times, psi0,
+                                     delta, alpha, omega_d, shape, opt_center, opt_width, I, Q)
+    I_vals, Q_vals = normalized_drive_pulse(times, shape, opt_center, opt_width, I, Q)
+    
+    plt.figure(figsize=(8, 4))
+    plt.plot(times, I_vals, label="I(t): Real Component (X)", color='blue')
+    plt.plot(times, Q_vals, label="Q(t): Imaginary Component (Y)", color='orange')
+    plt.axhline(1, linestyle='--', color='gray', alpha=0.4)
+    plt.axhline(0, linestyle='--', color='gray', alpha=0.3)
+    plt.axhline(-1, linestyle='--', color='gray', alpha=0.4)
+    #plt.axhline(-1, linestyle='--', color='gray', alpha=0.4)
+    plt.xlabel("Time (Unitless)")
+    plt.ylabel("Amplitude")
+    plt.title(f"Control Pulse Shape: I(t) and Q(t), Centre: {opt_center.item():.5f}, Width: {opt_width.item():.5f}")
+    plt.legend(loc='best')
+    plt.grid(True)
+    plt.tight_layout()
+    plt.show()
+    
+    populations = np.abs(psi_t)**2
+    plt.figure(figsize=(8, 4))
+    plt.plot(times, populations[:, 0], label="|0⟩")
+    plt.plot(times, populations[:, 1], label="|1⟩")
+    plt.plot(times, populations[:, 2], label="|2⟩ (leakage)", linestyle='--')
+    plt.xlabel("Time")
+    plt.ylabel("Population")
+    plt.title("3-Level Qubit Evolution under Optimized Gaussian Pulse")
+    plt.legend()
+    plt.grid(True)
+    plt.tight_layout()
+    plt.show()
+else:
+    print("Optimisation OFF")
+    psi_t = unitary_evolution_3level(H_func_3level, times, psi0,
+                                     delta, alpha, omega_d, shape, center, width, I, Q)
+    I_vals, Q_vals = normalized_drive_pulse(times, shape, center, width, I, Q)
+    
+    plt.figure(figsize=(8, 4))
+    plt.plot(times, I_vals, label="I(t): Real Component (X)", color='blue')
+    plt.plot(times, Q_vals, label="Q(t): Imaginary Component (Y)", color='orange')
+    plt.axhline(1, linestyle='--', color='gray', alpha=0.4)
+    plt.axhline(0, linestyle='--', color='gray', alpha=0.3)
+    plt.axhline(-1, linestyle='--', color='gray', alpha=0.4)
+    #plt.axhline(-1, linestyle='--', color='gray', alpha=0.4)
+    plt.xlabel("Time (Unitless)")
+    plt.ylabel("Amplitude")
+    plt.title(f"Control Pulse Shape: I(t) and Q(t), Centre: {center:.5f}, Width: {width:.5f}")
+    plt.legend(loc='best')
+    plt.grid(True)
+    plt.tight_layout()
+    plt.show()
+    
+    populations = np.abs(psi_t)**2
+    plt.figure(figsize=(8, 4))
+    plt.plot(times, populations[:, 0], label="|0⟩")
+    plt.plot(times, populations[:, 1], label="|1⟩")
+    plt.plot(times, populations[:, 2], label="|2⟩ (leakage)", linestyle='--')
+    plt.xlabel("Time")
+    plt.ylabel("Population")
+    plt.title("3-Level Qubit Evolution under Optimized Gaussian Pulse")
+    plt.legend()
+    plt.grid(True)
+    plt.tight_layout()
+    plt.show()
