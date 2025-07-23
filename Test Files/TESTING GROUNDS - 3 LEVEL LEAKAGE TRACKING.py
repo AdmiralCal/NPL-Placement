@@ -75,7 +75,7 @@ def unitary_evolution_3level(H_func, times, psi0,
 # -----------------------------
 # PARAMETERS AND INITIAL STATE
 # -----------------------------
-t_total = 20
+t_total = 10
 n_steps = 1000
 times = np.linspace(0, t_total, n_steps)
 delta = 0.0
@@ -173,7 +173,7 @@ if optim == "Y":
     plt.figure(figsize=(8, 4))
     plt.plot(times, I_vals, label="I(t): Real Component (X)", color='blue')
     plt.plot(times, Q_vals, label="Q(t): Imaginary Component (Y)", color='orange')
-    plt.axhline(1, linestyle='--', color='gray', alpha=0.4)
+    plt.axhline(1, label="Optimisation ON", linestyle='--', color='gray', alpha=0.4)
     plt.axhline(0, linestyle='--', color='gray', alpha=0.3)
     plt.axhline(-1, linestyle='--', color='gray', alpha=0.4)
     plt.text(8, -0.95, 'Optimisation: ON', fontsize = 12)
@@ -207,11 +207,11 @@ if optim == "Y":
         
     # Plot fidelity vs duration
     plt.figure(figsize=(8, 4))
-    plt.plot(durations, fidelities)
+    plt.plot(durations, fidelities, label="Optimisation ON")
     plt.xlabel("Gate Duration, T (Unitless)")
     plt.ylabel("Average Gate Fidelity")
-    plt.text(8, 0.32, 'Optimisation: ON', fontsize = 12)
     plt.title(f"Fidelity vs Gate Duration - INPUT: Width: {width:.5f}, $\\beta$: {beta:.5f}")
+    plt.legend()
     plt.grid(True)
     plt.tight_layout()
     plt.show()
@@ -233,10 +233,9 @@ else:
     plt.figure(figsize=(8, 4))
     plt.plot(times, I_vals, label="I(t): Real Component (X)", color='blue')
     plt.plot(times, Q_vals, label="Q(t): Imaginary Component (Y)", color='orange')
-    plt.axhline(1, linestyle='--', color='gray', alpha=0.4)
+    plt.axhline(1, label="Optimisation OFF", linestyle='--', color='gray', alpha=0.4)
     plt.axhline(0, linestyle='--', color='gray', alpha=0.3)
     plt.axhline(-1, linestyle='--', color='gray', alpha=0.4)
-    plt.text(8, -0.95, 'Optimisation: OFF', fontsize = 12)
     plt.xlabel("Time (Unitless)")
     plt.ylabel("Amplitude")
     plt.title(f"Control Pulse Shape: Centre: {center:.5f}, Width: {width:.5f}, $\\beta$: {beta:.5f}")
@@ -267,11 +266,11 @@ else:
         
     # Plot fidelity vs duration
     plt.figure(figsize=(8, 4))
-    plt.plot(durations, fidelities)
+    plt.plot(durations, fidelities, label="Optimisation OFF")
     plt.xlabel("Gate Duration, T (Unitless)")
     plt.ylabel("Average Gate Fidelity")
-    plt.text(8, 0.32, 'Optimisation: OFF', fontsize = 12)
     plt.title(f"Fidelity vs Gate Duration - INPUT: Width: {width:.5f}, $\\beta$: {beta:.5f}")
+    plt.legend()
     plt.grid(True)
     plt.tight_layout()
     plt.show()
