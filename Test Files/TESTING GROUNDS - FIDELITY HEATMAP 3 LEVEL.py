@@ -80,9 +80,9 @@ t_total = 20
 n_steps = 1000
 times = np.linspace(0, t_total, n_steps)
 delta = 0.0
-alpha = 0.0 #-0.3
+alpha = 0 #-0.3
 shape = "gaussian"
-width = 1.25625
+width = 1.25625#1.30354
 center = 3 * width
 I = 1.0
 Q = 0
@@ -112,53 +112,61 @@ def gate_fidelity(width, beta, times, omega=1.0):
     F_avg = (np.trace(M @ M.conj().T) + abs(np.trace(M))**2) / (n * (n + 1))
     return np.real(F_avg)   
 
-values = 10
-beta_values = np.linspace(0.0, 10.0, values)  
-omega_vals = np.linspace(0.0, 5.0, values)
+values = 61
+beta_values = np.linspace(3.0, -3.0, values)  
+omega_vals = np.linspace(0.0, 10.0, values)
 fidelities = []
 combined_f = np.zeros((values,values))
-for i, beta in enumerate(beta_values):
-    F = gate_fidelity(width, beta, times)
-    fidelities.append(F)
+
+while alpha >= -0.5 :
+        
+    for i, beta in enumerate(beta_values):
+        F = gate_fidelity(width, beta, times)
+        fidelities.append(F)
+        
+        for j, omega in enumerate(omega_vals):
+            f = gate_fidelity(width, beta, times, omega)
+            combined_f[i][j] = f
     
-    for j, omega in enumerate(omega_vals):
-        f = gate_fidelity(width, beta, times, omega)
-        combined_f[i][j] = f
-
-
-plt.figure(figsize=(8, 4))
-plt.plot(beta_values, fidelities, label="Avg. Gate Fidelity")
-plt.xlabel("DRAG Coefficient β")
-plt.ylabel("Fidelity")
-plt.title("Fidelity vs DRAG Beta for 3-Level Transmon")
-plt.grid(True)
-plt.axvline(x=0, color='gray', linestyle='--', alpha=0.5)
-plt.tight_layout()
-plt.legend()
-plt.show()
-
-fig, ax = plt.subplots(figsize=(6.5, 6.5), dpi=150)
-im = ax.imshow(combined_f, cmap='autumn')
-divider = make_axes_locatable(ax)
-cax = divider.append_axes("right", size="5%", pad=0.05)
-cbar = ax.figure.colorbar(im, cax=cax)
-# Show all ticks and label them with the respective list entries
-step = 1
-ax.set_xticks(range(0, len(beta_values), step))
-ax.set_xticklabels([f"{b:.2f}" for b in beta_values[::step]])
-ax.set_yticks(range(0, len(omega_vals), step))
-ax.set_yticklabels([f"{o:.2f}" for o in omega_vals[::step]])
-#ax.set_xticks(range(len(beta_values)), labels=[f"{b:.2f}" for b in beta_values])
-#ax.set_yticks(range(len(omega_vals)), labels=[f"{o:.2f}" for o in omega_vals])
-ax.set_xlabel('Beta, $\\beta$', fontweight ='bold')
-ax.set_ylabel('Omega, $\\Omega$', fontweight ='bold')
-# Loop over data dimensions and create text annotations.
-#for i in range(len(omega_vals)):
-#    for j in range(len(beta_values)):
-#        text = ax.text(j, i, combined_f[i, j],
-#                       ha="center", va="center", fontsize=15)
-
-ax.set_title(f"Fidelity Heatmap, Width: {width:.5f}")
-fig.tight_layout()
-plt.show()
-
+    
+    plt.figure(figsize=(8, 4))
+    plt.plot(beta_values, fidelities, label="Avg. Gate Fidelity")
+    plt.xlabel("DRAG Coefficient β")
+    plt.ylabel("Fidelity")
+    plt.title(f"Fidelity vs DRAG Beta for 3-Level Transmon w/ $\\Omega$ = 1.0, $\\alpha$ = {alpha:.1f}")
+    plt.grid(True)
+    plt.axvline(x=0, color='gray', linestyle='--', alpha=0.5)
+    plt.tight_layout()
+    plt.legend()
+    plt.show()
+    
+    fig, ax = plt.subplots(figsize=(8, 8), dpi=400)
+    im = ax.imshow(combined_f, cmap='Reds')
+    divider = make_axes_locatable(ax)
+    cax = divider.append_axes("right", size="5%", pad=0.05)
+    cbar = ax.figure.colorbar(im, cax=cax)
+    # Show all ticks and label them with the respective list entries
+    
+    
+    stepx = 3
+    stepy = 3
+    ax.set_xticks(range(0, len(omega_vals), stepx))
+    ax.set_xticklabels([f"{o:.2f}" for o in omega_vals[::stepx]], rotation=45)
+    ax.set_yticks(range(0, len(beta_values), stepy))
+    ax.set_yticklabels([f"{b:.2f}" for b in beta_values[::stepy]])
+    #ax.set_xticks(range(len(beta_values)), labels=[f"{b:.2f}" for b in beta_values])
+    #ax.set_yticks(range(len(omega_vals)), labels=[f"{o:.2f}" for o in omega_vals])
+    
+    ax.set_xlabel('Omega, $\\Omega$', fontweight ='bold')
+    ax.set_ylabel('Beta, $\\beta$', fontweight ='bold')
+    # Loop over data dimensions and create text annotations.
+    #for i in range(len(omega_vals)):
+    #    for j in range(len(beta_values)):
+    #        text = ax.text(j, i, "%.2f" % combined_f[i, j],
+    #                       ha="center", va="center", fontsize=6.5)
+    
+    ax.set_title(f"Fidelity Heatmap, Width: {width:.5f}, $\\alpha$ = {alpha:.1f}")
+    fig.tight_layout()
+    plt.show()
+    
+    alpha -= 0.05
