@@ -118,7 +118,7 @@ omega_vals = np.linspace(0.0, 10.0, values)
 fidelities = []
 combined_f = np.zeros((values,values))
 
-while alpha >= -0.5 :
+while alpha >= -1.0 :
         
     for i, beta in enumerate(beta_values):
         F = gate_fidelity(width, beta, times)
@@ -169,4 +169,6 @@ while alpha >= -0.5 :
     fig.tight_layout()
     plt.show()
     
+    fidelities = []
+    combined_f = np.zeros((values,values))
     alpha -= 0.05
