@@ -50,7 +50,7 @@ def normalized_drive_pulse(t, shape, center, width, I, Q):
     I_norm = I / max_component
     Q_norm = Q / max_component
     I_t = envelope * I_norm
-    Q_t = d_envelope_dt * Q_norm  # DRAG-style Q pulse (optional)
+    Q_t = -d_envelope_dt * Q_norm  # DRAG-style Q pulse (optional)
 
     return I_t, Q_t
 

@@ -46,7 +46,7 @@ def normalized_drive_pulse(t, shape, center, width, I, Q, beta=0.0):
     I_norm = I / max_component
     Q_norm = Q / max_component
     I_t = envelope * I_norm
-    Q_t = beta * d_envelope_dt
+    Q_t = -beta * d_envelope_dt
 
     return I_t, Q_t
 
