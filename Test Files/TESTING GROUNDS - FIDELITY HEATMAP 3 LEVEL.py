@@ -165,7 +165,7 @@ while alpha >= -1.0 :
     #        text = ax.text(j, i, "%.2f" % combined_f[i, j],
     #                       ha="center", va="center", fontsize=6.5)
     
-    ax.set_title(f"Fidelity Heatmap, Width: {width:.5f}, $\\alpha$ = {alpha:.1f}")
+    ax.set_title(f"Fidelity Heatmap, Width: {width:.5f}, $\\alpha$ = {alpha:.2f}")
     fig.tight_layout()
     plt.show()
     

@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-Created on Wed Jul 30 14:33:01 2025
+Created on Fri Aug  1 11:09:49 2025
 
 @author: ctm1g20
 """
@@ -9,11 +9,11 @@ Created on Wed Jul 30 14:33:01 2025
 Updated for 3-level Transmon Simulation
 Includes: 3x3 Hamiltonian, leakage tracking, DRAG-style correction,
 and updated fidelity calculation with leakage penalty
-Now includes optimization over width, beta, alpha, and omega_d.
-Converted from ℏ = 1 natural units to real physical units:
+Now includes optimization over width, beta, and omega_d only (alpha fixed).
+Converted from ℓ = 1 natural units to real physical units:
 - Time in nanoseconds (ns)
 - Frequencies in MHz
-- ℏ = 6.582119569e-7 MHz·ns
+- ℓ = 6.582119569e-7 MHz·ns
 """
 
 import numpy as np
@@ -88,18 +88,18 @@ def unitary_evolution_3level(H_func, times, psi0,
 # PARAMETERS AND INITIAL STATE
 # -----------------------------
 t_total_ns = 100  # ns
-n_steps = 1000
+n_steps = 20000
 times = np.linspace(0, t_total_ns, n_steps)
 delta = 0.0  # MHz
-alpha = -313.9 * MHz_to_rad_ns  # Converted to rad/ns - -300 / -313.9
-omega_d = 158.5 * MHz_to_rad_ns  # Converted to rad/ns - 1000 / 158.5
+alpha = -313.9 * MHz_to_rad_ns  # Fixed value (not optimised)
+omega_d = 158.5 * MHz_to_rad_ns  # Converted to rad/ns
 shape = "gaussian"
 width = 10  # ns
 center = 3 * width  # ns
-beta = 0.0
+beta = -0.2
 I = 1.0
 Q = 0.0
-optim = "Y"
+optim = "N"
 
 psi0 = np.array([[1], [0], [0]], dtype=complex)
 target = np.array([[0], [1], [0]], dtype=complex)
@@ -107,7 +107,7 @@ target = np.array([[0], [1], [0]], dtype=complex)
 # -----------------------------
 # UPDATED FIDELITY FUNCTION (Eq.2)
 # -----------------------------
-def gate_fidelity(width, beta, alpha, omega_d, times):
+def gate_fidelity(width, beta, omega_d, times):
     center = 3 * width
     psi0 = np.array([[1], [0], [0]], dtype=complex)
     psi1 = np.array([[0], [1], [0]], dtype=complex)
@@ -129,8 +129,8 @@ def gate_fidelity(width, beta, alpha, omega_d, times):
 # OBJECTIVE FUNCTION
 # -----------------------------
 def objective2(params):
-    width, beta, alpha, omega_d = params
-    F_avg = gate_fidelity(width, beta, alpha, omega_d, times)
+    width, beta, omega_d = params
+    F_avg = gate_fidelity(width, beta, omega_d, times)
     fidelity_loss = -F_avg
     return fidelity_loss
 
@@ -142,21 +142,21 @@ iter_count = [0]
 
 def stop_if_high_enough(current_guess):
     iter_count[0] += 1
-    width, beta, alpha, omega_d = current_guess
-    fid = gate_fidelity(width, beta, alpha, omega_d, times)
+    width, beta, omega_d = current_guess
+    fid = gate_fidelity(width, beta, omega_d, times)
     best_fid[0] = fid
     print(f"\n[Iteration {iter_count[0]}] Fidelity: {fid:.7f}")
     if fid >= 0.999995:
         raise StopIteration
 
-initial_guess = [width, beta, alpha, omega_d]
-bounds = [(t_total_ns/20, t_total_ns/2), (-3.0, 3.0), (-2 * np.pi * 500, 0.0), (0.0, 2 * np.pi * 5000)]  # ns, unitless, rad/ns, rad/ns
+initial_guess = [width, beta, omega_d]
+bounds = [(t_total_ns/20, t_total_ns/2), (-3.0, 3.0), (0.0, 2 * np.pi * 5000)]  # ns, unitless, rad/ns
 
 if optim == "Y":
     print("Optimisation ON")
     print(f"INITIAL PULSE WIDTH:  {width:.1f} ns")
     print(f"INITIAL DRAG BETA:    {beta:.4f}")
-    print(f"INITIAL ALPHA:        {alpha / MHz_to_rad_ns:.3f} MHz")
+    print(f"FIXED ALPHA:          {alpha / MHz_to_rad_ns:.3f} MHz")
     print(f"INITIAL OMEGA_D:      {omega_d / MHz_to_rad_ns:.3f} MHz")
 
     try:
@@ -166,22 +166,19 @@ if optim == "Y":
     except StopIteration:
         print("Early stopping: fidelity threshold reached.")
 
-    opt_width, opt_beta, opt_alpha, opt_omega_d = result.x
+    opt_width, opt_beta, opt_omega_d = result.x
     opt_center = 3 * opt_width
     max_fidelity = best_fid[0]
     print("------------")
     print(f"Optimal center:    {opt_center:.2f} ns")
     print(f"Optimal width:     {opt_width:.2f} ns")
     print(f"Optimal beta:      {opt_beta:.4f}")
-    print(f"Optimal alpha:     {opt_alpha / MHz_to_rad_ns:.3f} MHz")
+    print(f"Fixed alpha:       {alpha / MHz_to_rad_ns:.3f} MHz")
     print(f"Optimal omega_d:   {opt_omega_d / MHz_to_rad_ns:.3f} MHz")
     print(f"Maximum fidelity:  {max_fidelity:.10f}")
-
-    # -----------------------------
-    # FINAL SIMULATION AND PLOTS
-    # -----------------------------
+    
     psi_t = unitary_evolution_3level(H_func_3level, times, psi0,
-                                     delta, opt_alpha, opt_omega_d, shape, opt_center, opt_width, I, Q, opt_beta)
+                                     delta, alpha, opt_omega_d, shape, opt_center, opt_width, I, Q, opt_beta)
     I_vals, Q_vals = normalized_drive_pulse(times, shape, opt_center, opt_width, I, Q, opt_beta)
 
     plt.figure(figsize=(8, 4))
@@ -193,7 +190,7 @@ if optim == "Y":
     plt.text(8, -0.95, 'Optimisation: ON', fontsize = 12)
     plt.xlabel("Time, ns")
     plt.ylabel("Amplitude")
-    plt.title(f"Control Pulse Shape\n(Centre: {opt_center:.5f} ns, Width: {opt_width:.5f} ns,\n$\\beta$: {opt_beta:.5f}, $\\alpha$: {opt_alpha / MHz_to_rad_ns:.3f} MHz, $\\Omega_d$: {opt_omega_d / MHz_to_rad_ns:.3f} MHz)")
+    plt.title(f"Control Pulse Shape\n(Centre: {opt_center:.5f} ns, Width: {opt_width:.5f} ns,\n$\\beta$: {opt_beta:.5f}, $\\Omega_d$: {opt_omega_d / MHz_to_rad_ns:.3f} MHz)")
     plt.legend(loc='best')
     plt.grid(True)
     plt.tight_layout()
@@ -212,18 +209,18 @@ if optim == "Y":
     plt.tight_layout()
     plt.show()
 
-    durations = np.linspace(0.1, t_total_ns, 100)
+    durations = np.linspace(0.1, t_total_ns, 1000)
     fidelities = []
     for duration in durations:
         time_grid = np.linspace(0, duration, n_steps)
-        F = gate_fidelity(opt_width, opt_beta, opt_alpha, opt_omega_d, time_grid)
+        F = gate_fidelity(opt_width, opt_beta, opt_omega_d, time_grid)
         fidelities.append(F)
 
     plt.figure(figsize=(8, 4))
     plt.plot(durations, fidelities, label="Optimised Fidelity")
     plt.xlabel("Gate Duration, T, ns")
     plt.ylabel("Average Gate Fidelity")
-    plt.title(f"Fidelity vs Gate Duration\n(Width: {opt_width:.3f} ns, $\\beta$: {opt_beta:.3f}, $\\alpha$: {opt_alpha / MHz_to_rad_ns:.3f} MHz, $\\Omega_d$: {opt_omega_d / MHz_to_rad_ns:.3f} MHz)")
+    plt.title(f"Fidelity vs Gate Duration\n(Width: {opt_width:.3f} ns, $\\beta$: {opt_beta:.3f}, $\\Omega_d$: {opt_omega_d / MHz_to_rad_ns:.3f} MHz)")
     plt.legend()
     plt.grid(True)
     plt.tight_layout()
@@ -270,7 +267,7 @@ else:
     plt.tight_layout()
     plt.show()
     
-    durations = np.linspace(0, t_total_ns, 100)  # Vary total gate time
+    durations = np.linspace(0, t_total_ns, 1000)  # Vary total gate time
     fidelities = []
     for t_total in durations:
         time = np.linspace(0, t_total, 500)
