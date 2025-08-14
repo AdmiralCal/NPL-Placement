@@ -20,27 +20,24 @@ from measurement_integration import (
     simulate_shots,
     empirical_probs_and_ci,
     measurement_reward,
-    optimize_with_measurements
+    optimize_with_measurements,
+    plot_counts_vs_probs
 )
+
+from single_qubit_tom import (
+    hadamard,
+    sqrt_z_dag,
+    projective_meas,
+    single_qubit_tomography,
+    bloch_vec_and_density_mat
+)
+
 import numpy as np
 import matplotlib.pyplot as plt
-from scipy.linalg import expm
+from scipy.linalg import expm, sqrtm
 from scipy.optimize import minimize
 import math
 
-# -----------------------------
-# CONSTANTS AND UNIT CONVERSION
-# -----------------------------
-
-P0 = np.array([[1, 0, 0],
-               [0, 0, 0],
-               [0, 0, 0]])
-P1 = np.array([[0, 0, 0],
-               [0, 1, 0],
-               [0, 0, 0]])
-P2 = np.array([[0, 0, 0],
-               [0, 0, 0],
-               [0, 0, 1]])
 
 # -----------------------------
 # SYSTEM HAMILTONIAN (3-LEVEL)
@@ -113,11 +110,11 @@ t_total = 10  # ns
 times = np.linspace(0, t_total, 1000)
 delta = 0.0
 alpha = -3  # rad/ns
-omega_d = 1.0  # rad/ns
+omega_d = 0.83219  # rad/ns
 shape = "gaussian"
-width = 1  # ns
+width = 1.51667  # ns
 center = 3 * width
-beta = 0.0
+beta = -0.16510
 I, Q = 1.0, 0.0
 psi0 = np.array([[1], [0], [0]], dtype=complex)
 
@@ -142,10 +139,39 @@ def gate_fidelity(width, beta, omega_d, times):
     F_avg = (np.trace(M @ M.conj().T) + abs(np.trace(M)) ** 2) / (n * (n + 1))
     return np.real(F_avg)
 
+best_fid = [0]
+iter_count = [0]
+
+def stop_if_high_enough(current_guess):
+    iter_count[0] += 1
+    width, beta, omega_d = current_guess
+    fid = gate_fidelity(width, beta, omega_d, times)
+    best_fid[0] = fid
+    print(f"\n[Iteration {iter_count[0]}] Fidelity: {fid:.7f}")
+    if fid >= 0.999995:
+        raise StopIteration
+        
+def matrix_fidelity(rho_qubit, rho_m):
+    # ENSURE HERMITICITY
+    rho_qubit = (rho_qubit + rho_qubit.conj().T) / 2
+    rho_m = (rho_m + rho_m.conj().T) / 2
+
+    # Compute the matrix square root of rho
+    sqrt_rho = sqrtm(rho_qubit)
+
+    # Fidelity calculation
+    inner_term = sqrt_rho @ rho_m @ sqrt_rho
+    sqrt_inner = sqrtm(inner_term)
+    
+    # F(ρ,σ)=[Tr(√(√ρ  σ √ρ))] 
+    F = np.real((np.trace(sqrt_inner))**2)  # Take real part to avoid small numerical imag
+
+    return F
+
 # -----------------------------
 # OPTIMIZATION BLOCK
 # -----------------------------
-optim = "Y"
+optim = "N"
 if optim == "Y":
     print("Optimisation ON")
     def objective(params):
@@ -154,16 +180,23 @@ if optim == "Y":
 
     initial_guess = [width, beta, omega_d]
     bounds = [(0.1, t_total / 2), (-3.0, 3.0), (0, 5.0)]
-
+    try:
+        result = minimize(objective, initial_guess, method='Nelder-Mead',
+                          bounds=bounds, callback=stop_if_high_enough,
+                          options={'maxiter': 200})
+    except StopIteration:
+        print("Early stopping: fidelity threshold reached.")
+        
     result = minimize(objective, initial_guess, method='Nelder-Mead', bounds=bounds)
 
     opt_width, opt_beta, opt_omega_d = result.x
     opt_center = 3 * opt_width
+    max_fidelity = best_fid[0]
     print("------------")
     print(f"Optimal width:     {opt_width:.5f}")
     print(f"Optimal beta:      {opt_beta:.5f}")
     print(f"Optimal omega_d:   {opt_omega_d:.5f}")
-    print(f"Max Fidelity:      {-result.fun:.8f}")
+    print(f"Max Fidelity:      {max_fidelity:.8f}")
 
     # Final evolution
     psi_t = unitary_evolution_3level(H_func_3level, times, psi0,
@@ -173,11 +206,16 @@ if optim == "Y":
     # PROJECTIVE MEASUREMENT
     # -----------------------------
     final_psi = psi_t[-1]
-    probabilities = measure_probabilities(final_psi)
-    print("------------")
-    print(f"P(|0⟩): {probabilities[0]:.4f}")
-    print(f"P(|1⟩): {probabilities[1]:.4f}")
-    print(f"P(|2⟩): {probabilities[2]:.4f} (Leakage)")
+    probs = measure_probs_from_statevec(final_psi)
+    print(probs)
+    counts = simulate_shots(probs, 10000)
+    plot_counts_vs_probs(counts, probs)
+    empirical_probs_and_ci(counts, alpha=0.05)
+    #probabilities = measure_probabilities(final_psi)
+    #print("------------")
+    #print(f"P(|0⟩): {probabilities[0]:.4f}")
+    #print(f"P(|1⟩): {probabilities[1]:.4f}")
+    #print(f"P(|2⟩): {probabilities[2]:.4f} (Leakage)")
 
     # -----------------------------
     # PLOTTING STATE POPULATIONS
@@ -194,3 +232,83 @@ if optim == "Y":
     plt.grid(True)
     plt.tight_layout()
     plt.show()
+    
+else:
+    print("Optimisation OFF")
+    psi_t = unitary_evolution_3level(H_func_3level, times, psi0,
+                                     delta, alpha, omega_d, shape, center, width, I, Q, beta)
+   
+
+    fid = gate_fidelity(width, beta, omega_d, times)
+    
+    print("------------")
+    print(f"Pulse Center:    {center:.5f}")
+    print(f"Pulse Width:     {width:.5f}")
+    print(f"DRAG Beta:      {beta:.5f}")
+    print(f"Avg. Gate Fidelity idelity:  {fid:.10f}")    
+
+    final_psi = psi_t[-1]
+    probs = measure_probs_from_statevec(final_psi)
+    counts = simulate_shots(probs, 10000)
+    plot_counts_vs_probs(counts, probs)
+    empirical_probs_and_ci(counts, alpha=0.05)
+
+    populations = np.abs(psi_t)**2
+    plt.figure(figsize=(8, 4))
+    plt.plot(times, populations[:, 0], label="|0⟩")
+    plt.plot(times, populations[:, 1], label="|1⟩")
+    plt.plot(times, populations[:, 2], label="|2⟩ (leakage)", linestyle='--')
+    plt.xlabel("Time (Unitless)")
+    plt.ylabel("Population")
+    plt.title("3-Level Qubit Evolution under Unoptimized Gaussian Pulse + DRAG Pulse")
+    plt.legend()
+    plt.grid(True)
+    plt.tight_layout()
+    plt.show()
+    
+    # Get ideal probabilities
+    probs = np.abs(final_psi.flatten())**2
+    
+    # Simulate projective measurements
+    n_shots = 100
+    outcomes = np.random.choice([0, 1, 2], size=n_shots, p=probs)
+    counts = np.bincount(outcomes, minlength=3)
+    empirical_probs = counts / n_shots
+    
+    print("------------")
+    print("Theoretical probabilities:", probs)
+    print("Empirical probabilities:", empirical_probs)
+    print("Counts:", counts)
+    
+    psi_final = psi_t[-1].flatten()[:2]
+    tomography_results = single_qubit_tomography(psi_final, n_shots)
+    r_vec, rho_m = bloch_vec_and_density_mat(tomography_results, n_shots)
+    
+    # MEASURED DENSITY MATRIX (2X2): |0>, |1> SUBSPACE
+    # COMPONENTS: c0 = <0|psi>, c1 = <1|psi>, c2 = <2|psi>
+    psi_final = psi_t[-1].reshape(3, 1)  
+    c0, c1, c2 = psi_final.flatten()
+    p0, p1, p2 = np.abs(c0)**2, np.abs(c1)**2, np.abs(c2)**2
+    p_qubit = p0 + p1
+    p_leak  = p2
+
+    if p_qubit > 0:
+        psi01 = np.array([c0, c1], dtype=complex).reshape(2, 1)
+        psi01 = psi01 / np.sqrt(p_qubit)          # conditional state given no leakage
+    else:
+        psi01 = np.array([1.0, 0.0], dtype=complex).reshape(2, 1)  # arbitrary fallback
+    
+    rho_qubit = psi01 @ psi01.conj().T
+    # Keep p_leak around to report leakage separately
+    
+    tom_fid = matrix_fidelity(rho_qubit, rho_m)
+    fid_diff = np.abs(fid-tom_fid)
+    
+    print("------------")
+    print(f"Measured Bloch vector: {r_vec}")
+    #np.set_printoptions(precision=5)
+    print(f"Reconstructed density matrix:\n{rho_m}\n")
+    print(f"Measured density matrix:\n{rho_qubit}\n")
+    print(f"Fidelity between measured and tomography states: {tom_fid:.10f}\n")
+    print(f"Difference between Avg. Gate Fidelity and Tomography Fidelity: {fid_diff:.10f}\n")
+    
