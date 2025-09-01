@@ -20,6 +20,8 @@ def sqrt_z_dag():
 # TEMPORARY PROJECTIVE MEASUREMENT
 def projective_meas(state):
     probs = np.abs(state)**2
+    if probs.sum() > 0:
+        probs = probs / probs.sum()   # renormalize to 1
     outcome = np.random.choice(len(probs), p=probs)
     return outcome
 
@@ -88,8 +90,15 @@ def bloch_vec_and_density_mat(tomography_results, n_shots):
     
     return r_vec, rho_m
     
-    
-
+def reduced_rho_from_psi(psi):
+    amp01 = psi[-1].ravel()[:2]                          # Take |0> and |1> amplitudes
+    rho2 = np.outer(amp01, np.conj(amp01))     # Pure-state density matrix
+    p01  = np.real(np.vdot(amp01, amp01))      # Probability in computational subspace
+    if p01 > 1e-14:
+        rho2 /= p01                            # Normalise if there was leakage
+    else:
+        rho2 = 0.5 * np.eye(2, dtype=complex)  # If full leakage, return maximally entangled
+    return rho2
 
 
 
