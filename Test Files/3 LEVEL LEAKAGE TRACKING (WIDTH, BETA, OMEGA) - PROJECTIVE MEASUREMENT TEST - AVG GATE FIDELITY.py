@@ -108,16 +108,16 @@ def measure_probabilities(psi):
 # PARAMETERS AND INITIAL STATE
 # -----------------------------
 t_total = 10  # ns
-times = np.linspace(0, t_total, 1000)
+times = np.linspace(0, t_total, 500)
 delta = 0.0
 alpha = -3  # rad/ns
 omega_d = 1  # rad/ns
 shape = "gaussian"
-width = 0.5  # ns
+width = 1  # ns
 center = 3 * width
 beta = 0
 I, Q = 1.0, 0.0
-n_shots = 1000
+#n_shot = 5000
 psi0 = np.array([[1], [0], [0]], dtype=complex)
 
 # -----------------------------
@@ -139,7 +139,7 @@ def matrix_fidelity(rho_actual, rho_measured):
     return np.real((np.trace(sqrt_inner))**2)
 
 
-def tomography_state_fidelity(psi_init, U_target, width, beta, omega_d, times):
+def tomography_state_fidelity(psi_init, U_target, width, beta, omega_d, times, exact, n_shots=1000):
     """
     Fidelity for a *single input state*:
     - Evolve psi_init under pulse
@@ -154,20 +154,28 @@ def tomography_state_fidelity(psi_init, U_target, width, beta, omega_d, times):
         H_func_3level, times, psi_init,
         delta, alpha, omega_d, shape, center, width, I, Q, beta
     )
-    psi_final = psi_t[-1].flatten()[:2]  # restrict to {|0>,|1>} subspace
+    
+    if exact == "Y":
+        rho_qubit = reduced_rho_from_psi(psi_t)
+        rho_in = psi_init[:2] @ psi_init[:2].conj().T
+        rho_target = U_target @ rho_in @ U_target.conj().T
+        
+        return matrix_fidelity(rho_target, rho_qubit)
+    else:
+        psi_final = psi_t[-1].flatten()[:2]  # restrict to {|0>,|1>} subspace
+    
+        # Simulate tomography from projective measurements
+        tomography_results = single_qubit_tomography(psi_final, n_shots)
+        r_vec, rho_m = bloch_vec_and_density_mat(tomography_results, n_shots)
+    
+        # Ideal target output (density matrix after X gate)
+        rho_in = psi_init[:2] @ psi_init[:2].conj().T
+        rho_target = U_target @ rho_in @ U_target.conj().T
+    
+        return matrix_fidelity(rho_target, rho_m)
 
-    # Simulate tomography from projective measurements
-    tomography_results = single_qubit_tomography(psi_final, n_shots)
-    r_vec, rho_m = bloch_vec_and_density_mat(tomography_results, n_shots)
 
-    # Ideal target output (density matrix after X gate)
-    rho_in = psi_init[:2] @ psi_init[:2].conj().T
-    rho_target = U_target @ rho_in @ U_target.conj().T
-
-    return matrix_fidelity(rho_target, rho_m)
-
-
-def tomography_gate_fidelity(width, beta, omega_d, times):
+def tomography_gate_fidelity(width, beta, omega_d, times, exact, n_shots=1000):
     """
     Compute average gate fidelity of implemented operation vs. target X gate,
     using tomography with projective measurement simulation.
@@ -188,7 +196,7 @@ def tomography_gate_fidelity(width, beta, omega_d, times):
 
     fidelities = []
     for psi_in in states:
-        F = tomography_state_fidelity(psi_in, U_target, width, beta, omega_d, times)
+        F = tomography_state_fidelity(psi_in, U_target, width, beta, omega_d, times, exact, n_shots)
         fidelities.append(F)
 
     return np.mean(fidelities)
@@ -197,20 +205,30 @@ def tomography_gate_fidelity(width, beta, omega_d, times):
 # ===============================================
 # OBJECTIVE FUNCTION FOR OPTIMISER
 # ===============================================
-def objective_tomography(params, times):
+def objective_tomography(params, times, n_shots, exact):
     """
     Objective for optimizer: minimize -F, where
     F = tomography-based average gate fidelity.
     """
     width, beta, omega_d = params
-    F = tomography_gate_fidelity(width, beta, omega_d, times)
+    F = tomography_gate_fidelity(width, beta, omega_d, times, exact, n_shots=n_shots)
     return -F
+
+def objective_infidelity(params, times, n_shots, exact):
+    """
+    Objective for optimizer: minimize -F, where
+    F = tomography-based average gate fidelity.
+    """
+    width, beta, omega_d = params
+    F = tomography_gate_fidelity(width, beta, omega_d, times, exact, n_shots=n_shots)
+    return 1-F
 
 
 best_fid = [0]
 iter_count = [0]
 best_solution = [0, 0, 0]
 
+"""
 def stop_if_high_enough(current_guess):
     iter_count[0] += 1
     width, beta, omega_d = current_guess
@@ -221,20 +239,108 @@ def stop_if_high_enough(current_guess):
     print(f"\n[Iteration {iter_count[0]}] Fidelity: {fid:.7f}")
     if fid >= 0.999995:
         raise StopIteration
+"""        
+
+# -------------------------------------------------
+# Optimization wrapper to record infidelity per iteration
+# -------------------------------------------------
+def run_optimization(n_shots, times, initial_guess, bounds, exact, max_iter):
+    """
+    Runs optimization for a given number of shots and records infidelity.
+    """
+    history = []
+    iter_count = [0]
+    def callback(xk):
+        # Record current infidelity at this step
+        iter_count[0] += 1
+        infid = objective_infidelity(xk, times, n_shots, exact)
+        print(f"\n[Iteration {iter_count[0]}] Fidelity: {1-infid:.7f}")
+        history.append(infid)
+        if iter_count[0] >= max_iter:
+            raise StopIteration
+
+    result = minimize(objective_infidelity, initial_guess, args=(times, n_shots, exact), method="Nelder-Mead", 
+        bounds=bounds, callback=callback,
+        options={"maxiter": max_iter}
+    )
+    return history, result
+
+
+# -------------------------------------------------
+# Plot infidelity vs iterations for multiple n_shots
+# -------------------------------------------------
+def plot_infidelity_vs_iterations(times, initial_guess, bounds, shot_list, max_iter):
+    """
+    Runs optimization for different shot counts and plots infidelity vs iterations.
+    """
+    plt.figure(figsize=(8, 5))
+    
+    exact = "N"
+    for n_shots in shot_list:
+        print(f"NUMBER OF SHOTS:  {n_shots}")
+        print("")
+        history, result = run_optimization(n_shots, times, initial_guess, bounds, exact, max_iter)
+        iterations = np.arange(1, len(history) + 1)
+        plt.plot(iterations, history, marker="o", label=f"{n_shots} shots", markersize=2)
+        opt_width, opt_beta, opt_omega_d = result.x
+        opt_center = 3 * opt_width
+        max_fidelity = -result.fun
         
+        print("------------")
+        print(f"Optimal width:     {opt_width:.5f}")
+        print(f"Optimal beta:      {opt_beta:.5f}")
+        print(f"Optimal omega_d:   {opt_omega_d:.5f}")
+        print(f"Max Fidelity:      {max_fidelity:.8f}") 
+        print("------------")
+    
+    exact = "Y"
+    
+    history, result = run_optimization(n_shots, times, initial_guess, bounds, exact, max_iter)
+    iterations = np.arange(1, len(history) + 1)
+    plt.plot(iterations, history, marker="o", label="Infinite shots - DIRECT MEASUREMENT", markersize=2)
+    opt_width, opt_beta, opt_omega_d = result.x
+    opt_center = 3 * opt_width
+    max_fidelity = -result.fun
+    
+    print("------------")
+    print(f"Optimal width:     {opt_width:.5f}")
+    print(f"Optimal beta:      {opt_beta:.5f}")
+    print(f"Optimal omega_d:   {opt_omega_d:.5f}")
+    print(f"Max Fidelity:      {max_fidelity:.8f}") 
+    print("------------")
+    
+    
+    plt.xlabel("Iteration number")
+    plt.xticks(np.arange(0, max_iter, step=10))
+    plt.ylabel("Infidelity (1 - F)")
+    plt.title("Infidelity vs Iterations for Different Measurement Shots")
+    #plt.yscale("log")  # log scale to highlight convergence
+    plt.grid(True, which="both", ls="--", alpha=0.6)
+    plt.legend()
+    plt.tight_layout()
+    plt.show()
 
 
+shot_list = [100, 1000, 5000, 10000]  # Different tomography shot counts
+initial_guess = [width, beta, omega_d]
+bounds = [(0.1, t_total / 2), (-3.0, 3.0), (0, 5.0)]
+max_iter=101
+plot_infidelity_vs_iterations(times, initial_guess, bounds, shot_list, max_iter)
+
+
+
+"""
 # -----------------------------
 # OPTIMIZATION BLOCK
 # -----------------------------
 optim = "Y"
 if optim == "Y":
     print("Optimisation ON")
-
+    print(f"Number of Measurement Shots per Iteration: {n_shot}")
     initial_guess = [width, beta, omega_d]
     bounds = [(0.1, t_total / 2), (-3.0, 3.0), (0, 5.0)]
     try:
-        result = minimize(objective_tomography, initial_guess, args=(times), method='Nelder-Mead',
+        result = minimize(objective_tomography, initial_guess, args=(times, n_shot), method='Nelder-Mead',
                           bounds=bounds, callback=stop_if_high_enough,
                           options={'maxiter': 200})
     except StopIteration:
@@ -244,7 +350,7 @@ if optim == "Y":
 
     opt_width, opt_beta, opt_omega_d = result.x
     opt_center = 3 * opt_width
-    max_fidelity = best_fid[0]
+    max_fidelity = -result.fun
     
     print("------------")
     print(f"Optimal width:     {opt_width:.5f}")
@@ -258,7 +364,7 @@ if optim == "Y":
 
     final_psi = psi_t[-1]
     probs = measure_probs_from_statevec(final_psi)
-    counts = simulate_shots(probs, 10000)
+    counts = simulate_shots(probs, n_shot)
     plot_counts_vs_probs(counts, probs)
 
     empirical_probs_and_ci(counts, alpha=0.05)
@@ -296,10 +402,9 @@ if optim == "Y":
     probs = np.abs(final_psi.flatten())**2
     
     # Simulate projective measurements
-    n_shots = 100000
-    outcomes = np.random.choice([0, 1, 2], size=n_shots, p=probs)
+    outcomes = np.random.choice([0, 1, 2], size=n_shot, p=probs)
     counts = np.bincount(outcomes, minlength=3)
-    empirical_probs = counts / n_shots
+    empirical_probs = counts / n_shot
     
     print("------------")
     print("Theoretical probabilities:", probs)
@@ -309,8 +414,8 @@ if optim == "Y":
     rho_qubit = reduced_rho_from_psi(psi_t)
     
     psi_final = psi_t[-1].flatten()[:2]
-    tomography_results = single_qubit_tomography(psi_final, n_shots)
-    r_vec, rho_m = bloch_vec_and_density_mat(tomography_results, n_shots)
+    tomography_results = single_qubit_tomography(psi_final, n_shot)
+    r_vec, rho_m = bloch_vec_and_density_mat(tomography_results, n_shot)
     
     
     # MEASURED DENSITY MATRIX (2X2): |0>, |1> SUBSPACE
@@ -326,5 +431,6 @@ if optim == "Y":
     print(f"Reconstructed Density Matrix:\n{rho_m}\n")
     print(f"Measured Density Matrix:\n{rho_qubit}\n")
     print(f"Target Density Matrix:\n{np.array([[0, 0], [0, 1]], dtype=complex)}\n")
-    print(f"Fidelity between Target and Target Density Matrices: {max_fidelity:.10f}\n")
+    print(f"Fidelity between Reconstructed and Target Density Matrices: {max_fidelity:.10f}\n")
     
+"""

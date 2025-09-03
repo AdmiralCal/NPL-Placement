@@ -287,7 +287,7 @@ if optim == "Y":
 
     # Keep p_leak around to report leakage separately
     
-    tom_fid = tomography_fidelity(width, beta, omega_d, times)
+    tom_fid = tomography_fidelity(opt_width, opt_beta, opt_omega_d, times)
 
     print("------------")
     print(f"Measured Bloch vector: {r_vec}")
@@ -355,7 +355,7 @@ else:
 
     # Keep p_leak around to report leakage separately
     
-    tom_fid = tomography_fidelity(width, beta, omega_d, times)
+    tom_fid = tomography_fidelity(opt_width, opt_beta, opt_omega_d, times)
 
     print("------------")
     print(f"Measured Bloch vector: {r_vec}")
