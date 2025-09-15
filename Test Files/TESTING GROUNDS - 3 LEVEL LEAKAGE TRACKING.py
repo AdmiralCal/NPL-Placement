@@ -78,9 +78,9 @@ def unitary_evolution_3level(H_func, times, psi0,
 t_total = 10
 n_steps = 1000
 times = np.linspace(0, t_total, n_steps)
-delta = 0.0
-alpha = 0.0 #-0.3
-omega_d = 1.0
+delta = -0.54412 # rad/ns 0
+alpha = -1.95909  # rad/ns -3
+omega_d = 1.28617  # rad/ns 1
 shape = "gaussian"
 width = 1
 center = 3 * width

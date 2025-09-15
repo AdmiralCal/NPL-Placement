@@ -228,7 +228,7 @@ if optim == "Y":
 
     final_psi = psi_t[-1]
     probs = measure_probs_from_statevec(final_psi)
-    counts = simulate_shots(probs, 10000)
+    counts = simulate_shots(probs, n_shots)
     plot_counts_vs_probs(counts, probs)
 
     empirical_probs_and_ci(counts, alpha=0.05)
@@ -265,8 +265,7 @@ if optim == "Y":
     # Get ideal probabilities
     probs = np.abs(final_psi.flatten())**2
     
-    # Simulate projective measurements
-    n_shots = 100000
+    # Simulate projective measurement
     outcomes = np.random.choice([0, 1, 2], size=n_shots, p=probs)
     counts = np.bincount(outcomes, minlength=3)
     empirical_probs = counts / n_shots
