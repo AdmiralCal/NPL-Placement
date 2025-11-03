@@ -112,7 +112,7 @@ def gate_fidelity(width, beta, times, omega=1.0):
     F_avg = (np.trace(M @ M.conj().T) + abs(np.trace(M))**2) / (n * (n + 1))
     return np.real(F_avg)   
 
-values = 61
+values = 31
 beta_values = np.linspace(3.0, -3.0, values)  
 omega_vals = np.linspace(0.0, 10.0, values)
 fidelities = []
